@@ -1,7 +1,7 @@
 import subprocess
 import csv
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 import requests
 import logging
@@ -50,6 +50,74 @@ def write_status(file_path, status):
     with open(file_path, "a", newline="") as f:
         writer = csv.writer(f)
         writer.writerow([timestamp, status])
+
+
+def _read_events(csv_path):
+    path = Path(csv_path)
+    if not path.exists():
+        return []
+
+    events = []
+    try:
+        with path.open("r", newline="") as f:
+            reader = csv.reader(f)
+            for row in reader:
+                if len(row) != 2:
+                    continue
+                timestamp_str, status_str = row
+                try:
+                    timestamp = datetime.strptime(timestamp_str.strip(), "%Y-%m-%d %H:%M:%S")
+                    status = int(status_str.strip())
+                except ValueError:
+                    continue
+                events.append((timestamp, status))
+    except Exception as e:
+        logging.error(f"Failed to read CSV file for durations: {e}")
+        return []
+
+    return events
+
+
+def get_last_outage_duration(csv_path) -> timedelta | None:
+    events = _read_events(csv_path)
+    for idx in range(len(events) - 2, -1, -1):
+        prev_timestamp, prev_status = events[idx]
+        next_timestamp, next_status = events[idx + 1]
+        if prev_status == 1 and next_status == 0:
+            return next_timestamp - prev_timestamp
+    return None
+
+
+def get_duration_since_last_restore(csv_path) -> timedelta | None:
+    events = _read_events(csv_path)
+    for idx in range(len(events) - 2, -1, -1):
+        prev_timestamp, prev_status = events[idx]
+        next_timestamp, next_status = events[idx + 1]
+        if prev_status == 0 and next_status == 1:
+            return next_timestamp - prev_timestamp
+    return None
+
+
+def format_duration(delta: timedelta) -> str:
+    total_seconds = int(delta.total_seconds())
+    if total_seconds < 0:
+        total_seconds = abs(total_seconds)
+
+    days, remainder = divmod(total_seconds, 86400)
+    hours, remainder = divmod(remainder, 3600)
+    minutes, seconds = divmod(remainder, 60)
+
+    parts = []
+    if days:
+        parts.append(f"{days} д")
+    if hours:
+        parts.append(f"{hours} год")
+    if minutes:
+        parts.append(f"{minutes} хв")
+    if seconds or not parts:
+        parts.append(f"{seconds} сек")
+
+    return " ".join(parts)
 
 
 def send_telegram_alert(message):
@@ -113,13 +181,21 @@ def main():
 
         if consecutive_failures >= config.ALERT_THRESHOLD and not alert_sent:
             logging.warning("Ping lost")
-            send_telegram_alert("⚠️ Відсутнє електроживлення")
+            duration = get_duration_since_last_restore(config.CSV_FILE)
+            message = "⚠️ Відсутнє електроживлення"
+            if duration:
+                message += "\n⏱ Минуло від попереднього відновлення: " + format_duration(duration)
+            send_telegram_alert(message)
             alert_sent = True
     else:
         # Якщо світло зʼявилося після відправленого алерта
         if alert_sent:
             logging.info("Ping restored")
-            send_telegram_alert("✅ Електроживлення відновлено")
+            duration = get_last_outage_duration(config.CSV_FILE)
+            message = "✅ Електроживлення відновлено"
+            if duration:
+                message += "\n⏱ Відключення тривало: " + format_duration(duration)
+            send_telegram_alert(message)
             alert_sent = False
         consecutive_failures = 0
 
