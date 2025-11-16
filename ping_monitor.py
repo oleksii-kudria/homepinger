@@ -331,7 +331,7 @@ def main():
         if consecutive_failures >= config.ALERT_THRESHOLD and not alert_sent:
             logging.warning("Ping lost")
             duration = get_duration_since_last_restore(config.CSV_FILE)
-            message = "⚠️ Відсутнє електроживлення"
+            message = "🚫 Відсутнє електроживлення"
             if duration:
                 message += "\n⏱ Минуло від попереднього відновлення: " + format_duration(duration)
             send_telegram_alert(message)
