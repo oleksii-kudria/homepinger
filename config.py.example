@@ -1,0 +1,8 @@
+PING_IP = "10.10.11.12"
+PING_INTERVAL = 20  # Інтервал у секундах
+ALERT_THRESHOLD = 3  # Кількість невдалих пінгів для сповіщення
+STATE_FILE = "/opt/homepinger/state.json"
+CSV_FILE = "result.csv"  # Шлях до CSV-файлу
+LOG_FILE = "/var/log/homepinger.log"
+TELEGRAM_TOKEN = ""
+TELEGRAM_CHAT_ID = ""
